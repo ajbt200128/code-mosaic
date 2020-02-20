@@ -164,7 +164,7 @@
 
    Luckily, after 15 minutes, we see that our program succeeded! Somewhat:
 
-   [[./gw_backwards]]
+   [[./gw_backwards/final.jpg]]
 
    Two things of note here, first that its backwards, and second that the colors
    seem off. What seems interesting is that there are tan coding themes, but

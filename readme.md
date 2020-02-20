@@ -132,7 +132,7 @@ For my first attempt I tried the GWU logo:
 
 Luckily, after 15 minutes, we see that our program succeeded! Somewhat:
 
-<./gw_backwards>
+![img](./gw_backwards/final.jpg)
 
 Two things of note here, first that its backwards, and second that the colors seem off. What seems interesting is that there are tan coding themes, but they are not being used for the tan parts of the logo, which is weird.
 
