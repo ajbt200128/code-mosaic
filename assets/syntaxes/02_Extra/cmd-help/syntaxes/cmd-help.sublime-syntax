@@ -1,0 +1,372 @@
+%YAML 1.2
+---
+name: Command Help
+file_extensions:
+  # don't really exist, but useful for the shortname
+  - cmd-help
+  - help
+scope: text.cmd-help
+
+
+variables:
+### section name variables:
+  # words regardless of case, including dashes for compound words
+  any_word: '[A-Za-z][A-Za-z-]*\b'
+  # allow parentheses on both ends of the word
+  any_word2: '\(?{{any_word}}\)?'
+  # words starting with uppercase
+  leading_word: '[A-Z][A-Za-z-]*\b'
+  # only consider lines <= 40 chars long
+  lookahead_40: '(?=.{1,40}\n)'
+
+### command option variables:
+  option_break: '[ \t\n,=\[</:]'
+  # marks seen in options: . ? : # $ -- +
+  option_char: '[^{{option_break}}]'
+  option_name: '{{option_char}}+'
+
+### command/option argument variables:
+  ellipsis: '\.\.\.'
+  allcaps_argument_name: '[A-Z][0-9A-Z_]*\b'
+  relaxed_argument_name: '[A-Za-z][0-9A-Za-z_-]*\b'
+
+### other-def variables:
+  other_lowercase_name: '[a-z][0-9a-z_-]*\b'
+  long_space: '   |\t|\n'
+
+scope_variables: # rightmost scope is matched first
+  section_heading_scope: &SECTION_HEADING_SCOPE
+    constant.section-heading.cmd-help  string.section-heading.cmd-help
+    markup.heading.cmd-help  entity.name.section.cmd-help
+  inline_usage_scope: &INLINE_USAGE_SCOPE
+    constant.section-heading.cmd-help  string.inline-usage.cmd-help
+    markup.heading.inline-usage.cmd-help  entity.name.section.inline-usage.cmd-help
+  option_def_scope: &OPTION_DEF_SCOPE
+    entity.name.function.option.cmd-help
+  option_argument_scope: &OPTION_ARGUMENT_SCOPE
+    string.option-argument.cmd-help  variable.other.option-argument.cmd-help
+    variable.parameter.option-argument.cmd-help
+  argument_def_scope: &ARGUMENT_DEF_SCOPE # same base scopes as option argument
+    string.argument.cmd-help  variable.other.argument.cmd-help
+    variable.parameter.argument.cmd-help
+  # all-caps definitions, usually environment vars but also command args
+  other_variable_def_scope: &OTHER_VARIABLE_DEF_SCOPE
+    variable.other.readwrite.cmd-help  string.other-variable.cmd-help
+  # non all-caps definitions: subcommands, arguments, features, etc.
+  other_def_scope: &OTHER_DEF_SCOPE
+    keyword.other.def.cmd-help # support.fuction variable.function ?
+
+
+contexts:
+  prototype:
+    # abort if color escape codes
+    - match: '(?=.*\e\[0m)'
+      set: sink
+    # abort if formatted with backspaces
+    - match: '(?=.*[\b])'
+      set: sink
+
+  main: # entry point only, main-b is the real main
+    - meta_include_prototype: false
+    - include: first-line-specials
+    - match: '^'
+      set: main-b
+
+  first-line-specials:
+    - include: ignore-syntax-test-header
+    # man page first line: ^cmd/fn_name(man_section_digit) ... idem$
+    - match: '(?=^([A-Z-]+)\(([0-9])\)\s.+\s\1\(\2\)$)'
+      push:
+        - clear_scopes: true
+        - include: Manpage.sublime-syntax
+
+  main-b: # stack lv 0
+    - match: '^'
+      push: [line, line-begin]
+
+  line: # stack lv 1
+    - match: '$'
+      pop: true
+
+  ### helpers ##################################################################
+
+  else-pop:
+    - include: eol-pop # '.' doesn't match '\n'
+    - match: '(?=.)'
+      pop: true
+
+  eol-pop:
+    - match: '\n'
+      pop: true
+
+  then-pop:
+    - match: ''
+      pop: true
+
+  de-scope-match:
+    - clear_scopes: 1
+    - include: then-pop
+
+  sink:
+    - clear_scopes: true
+    - meta_include_prototype: false
+
+  ignore-syntax-test-header:
+  - match: '# SYNTAX TEST "cmd-help.sublime-syntax"\n'
+    set: main
+  - match: '^\n$' # empty line
+    set: main
+
+  ### stack lv 2 ###############################################################
+
+  line-begin:
+    - match: '^(?=\S)'
+      set: indent-0
+    - match: '^ {1,2}(?=\S)'
+      set: indent-1-2
+    - match: '^ {3,8}(?=\S)'
+      set: indent-3-8
+    - match: '^\t{1,2}(?=\S)'
+      set: indent-3-8
+    - include: else-pop
+
+  indent-0:
+    - include: heading
+    - include: option-def-first
+    - include: argument-def
+    - include: other-def
+    - include: else-pop
+
+  indent-1-2:
+    - include: option-def-first
+    - include: heading
+    - include: argument-def
+    - include: other-def
+    - include: else-pop
+
+  indent-3-8:
+    - include: option-def-first
+    - include: argument-def
+    - include: other-def
+    - include: else-pop
+
+  ### section headings #########################################################
+
+  heading:
+    - include: heading-specials
+    - match: '{{lookahead_40}}{{leading_word}}( {{any_word2}})*:?\n'
+      scope: *SECTION_HEADING_SCOPE
+      set: then-pop
+    # - match: '{{any_word2}}( {{any_word2}})*:\n'
+    #   scope: *SECTION_HEADING_SCOPE
+    #   set: then-pop
+
+  heading-specials:
+    - match: '(?i:usage):(?=.+\n)'
+      scope: *INLINE_USAGE_SCOPE
+      set: then-pop
+    # python argparse
+    - match: '(positional arguments|optional arguments|required arguments|options):\n'
+      scope: *SECTION_HEADING_SCOPE
+      set: then-pop
+
+  ### option definitions #######################################################
+
+  option-def:
+    - match: '-{{option_name}}'
+      scope: *OPTION_DEF_SCOPE
+      set: option-def-post
+
+  option-def-specials:
+    - match: '--(?=\s)'
+      scope: keyword.control.end-of-options.cmd-help
+      set: then-pop
+    - match: '\+(?=[\s<[:alpha:]])'
+      scope: keyword.control.plus-option.cmd-help
+      set: plus-option-post
+    - match: '-:(?={{option_break}})'
+      scope: *OPTION_DEF_SCOPE
+      set: option-def-post
+
+  option-def-first:
+    - include: option-def-specials
+    - match: '---' # probably a separator
+      pop: true
+    - include: option-def
+
+  option-def-post:
+    - include: option-def-connectors
+    - match: '='
+      set: option-def+equals
+    # match '[=' or '[' or ' [' or ':['
+    - match: '\[=|\[| \[|:\['
+      set: option-def+square-bracket
+    - match: ':'
+      set: option-def+colon
+    - match: ','
+      set: option-def+comma
+    - match: '(?=<)'
+      set: option-def+space
+    - match: ' '
+      set: option-def+space
+    - include: else-pop
+
+  option-def-connectors:
+    - match: ', '
+      set: option-def-or-pop
+    - match: ' \| '
+      set: option-def-or-pop
+    - match: ' (?=-)'
+      set: option-def-or-pop
+    - match: ' or '
+      set: option-def-or-pop
+    - match: '  or  '
+      set: option-def-or-pop
+    - match: '/'
+      set: option-def-or-pop
+    - match: '\s+(?=-)'
+      set: option-def-or-pop
+
+  option-def-or-pop:
+    - include: option-def
+    - include: else-pop
+
+  ### option arguments #########################################################
+
+  option-def+space:
+    - match: '<.*?>'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '{{allcaps_argument_name}}\b'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '{{relaxed_argument_name}}(?! [:alpha:])'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '{{relaxed_argument_name}}(?= or )'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: "'{{relaxed_argument_name}}'"
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '{'
+      set: option-argument-curly-bracket
+    - include: else-pop
+
+  option-def+equals:
+    - match: '{{relaxed_argument_name}}'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '<.*?>'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - match: '{'
+      set: option-argument-curly-bracket
+    - include: else-pop
+
+  option-def+square-bracket:
+    - meta_content_scope: *OPTION_ARGUMENT_SCOPE
+    - match: '\|'
+      push: de-scope-match
+    - match: '(?=])'
+      set:
+        - match: ']'
+          set: option-argument-post
+
+  option-def+colon:
+    - match: '<.*?>'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - include: else-pop
+
+  option-def+comma:
+    - match: '<.*?>'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: option-argument-post
+    - include: else-pop
+
+  option-argument-curly-bracket:
+    - meta_content_scope: *OPTION_ARGUMENT_SCOPE
+    # match ',' or '|'
+    - match: ',|\|'
+      push: de-scope-match
+    - match: '(?=})'
+      set:
+        - match: '}'
+          set: option-argument-post
+
+  option-argument-post:
+    - include: option-def-connectors
+    - match: '({{ellipsis}})?'
+      scope: *OPTION_ARGUMENT_SCOPE
+    # match '[=' or '['
+    - match: '\[=|\['
+      set: option-def+square-bracket
+    - match: ',\['
+      set: option-def+square-bracket
+    - match: '='
+      set: option-def+equals
+    - match: '\|'
+      set: option-def+space
+    - include: else-pop
+
+  plus-option-post:
+    - match: '<.*?>'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: then-pop
+    # e.g.: "LINE:COLUMN" (from emacs)
+    - match: '{{allcaps_argument_name}}(:{{allcaps_argument_name}})*'
+      scope: *OPTION_ARGUMENT_SCOPE
+      set: then-pop
+    - include: else-pop
+
+  ### other definitions ########################################################
+
+  argument-def:
+    - match: '<{{relaxed_argument_name}}>({{ellipsis}})?'
+      scope: *ARGUMENT_DEF_SCOPE
+      set: then-pop
+    - match: '{'
+      set: curly-bracket-argument-def
+    - match: '-(?=  )'
+      scope: *ARGUMENT_DEF_SCOPE # stdin
+      set: then-pop
+    - match: '({{relaxed_argument_name}}) ({{ellipsis}})'
+      captures:
+        1: *ARGUMENT_DEF_SCOPE
+        2: *ARGUMENT_DEF_SCOPE
+      set: then-pop
+
+  curly-bracket-argument-def:
+    - meta_content_scope: *ARGUMENT_DEF_SCOPE
+    # match ',' or '|'
+    - match: ',|\|'
+      push: de-scope-match
+    - match: '(?=})'
+      set:
+        - match: '}'
+          set: then-pop
+    - include: eol-pop
+
+  other-def:
+    - match: '{{other_lowercase_name}}(?={{long_space}})'
+      scope: *OTHER_DEF_SCOPE
+      set: then-pop
+    # e.g.: "compose*" (from docker)
+    - match: '{{other_lowercase_name}}\*(?=   )'
+      scope: *OTHER_DEF_SCOPE
+      set: then-pop
+    # e.g.: "build, b" (from cargo)
+    - match: '({{other_lowercase_name}}), ({{other_lowercase_name}})(?={{long_space}})'
+      captures:
+        1: *OTHER_DEF_SCOPE
+        2: *OTHER_DEF_SCOPE
+      set: then-pop
+
+    - match: '{{allcaps_argument_name}}(?=  )'
+      scope: *OTHER_VARIABLE_DEF_SCOPE
+      set: then-pop
+    # e.g.: "PYTHONSTARTUP:", "PYTHONCASEOK :"
+    - match: '{{allcaps_argument_name}}(?=\s*:)'
+      scope: *OTHER_VARIABLE_DEF_SCOPE
+      set: then-pop
