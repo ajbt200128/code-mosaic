@@ -1,7 +1,7 @@
 %YAML 1.2
 ---
 # http://www.sublimetext.com/docs/3/syntax.html
-name: Mediawiki NG
+name: MediaWiki
 file_extensions: [mediawiki, wikipedia, wiki]
 scope: text.html.mediawiki
 

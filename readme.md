@@ -9,6 +9,15 @@
     - [GW Gate](#sec-1-6-1)
     - [Me](#sec-1-6-2)
     - [Bonus Mona Lisa](#sec-1-6-3)
+- [Update](#sec-2)
+  - [Improving Color Palette](#sec-2-1)
+  - [Improving Crop](#sec-2-2)
+  - [Improving Speed](#sec-2-3)
+  - [New Gallery](#sec-2-4)
+    - [Me](#sec-2-4-1)
+    - [Mona Lisa](#sec-2-4-2)
+    - [Gate](#sec-2-4-3)
+    - [GW Logo](#sec-2-4-4)
 
 # CodePhotoMosaic<a id="sec-1"></a>
 
@@ -191,3 +200,73 @@ Note that most photo viewers won't let you zoom in or even load the photo. Photo
 ### Bonus Mona Lisa<a id="sec-1-6-3"></a>
 
 Here's the Mona Lisa: ![img](./mona_lisa/final.jpg)
+
+# Update<a id="sec-2"></a>
+
+For the update of this project, I focused on 3 things:
+
+1.  Improving the color palette
+2.  Improving the cropping
+3.  Indirectly, improving speed
+
+## Improving Color Palette<a id="sec-2-1"></a>
+
+So the ~8-16 colors weren't enough to have anything but slightly abstract looking photos. Luckily, since my program uses themes made in the format for the Sublime text editor, I could almost certainly find more, which I did. Namely [rainglow](https://github.com/rainglow/sublime/tree/master/rainglow), a 300+ collection of various themes. This meant that I could still "not cheat" and continue to only use practical, in use editor themes, and not use custom themes that aren't practical. Now lets see how this looks with the previous photo of me, which before was hard to tell what was what:
+
+![img](./me_colors/output.png)
+
+If we compare this to before, this looks A LOT better, and at least my friends could tell it was me before I showed them the original, where before they couldn't. The downside of this approach is that now we are cycling through 300+ themes for each tile, which took an 38 minutes where before it only took one. We'll address that later.
+
+## Improving Crop<a id="sec-2-2"></a>
+
+Clearly there's still an issue, namely that some code blocks are incredibly long or short, and leave a lot of empty space. There's two ways to fix this, the first being to simply crop the image to size, and the second being to somehow filter what code we use. I tried the first method initially, resizing any image to first fill the desired square (i.e. if we have 100x100 pixel tiles, resize it so the smallest dimension is 100 pixels), then crop it. This didn't add any extra compute time, and we can see the result looks good:
+
+![img](./me_colors_crop/output.png)
+
+If we zoom in though, we see that a lot of the code has a weird zoom to it, and is unreadable. After some investigation, I realized that the tiles that looked good were those that had around 30 or more lines of code, as then they were longer than they were wide, so a crop only cut off lines after a certain point. If the functions were < 30 lines, the crop would cut off the right and/or left half of the image, meaning that whatever the code was was unintelligible. I really liked the look of the code that was longer, as even though you couldn't see *every* line of the function, it was still normal looking, as when you open up code in an editor it's not unusual to have the bottom half of some long function cut off. So what I implemented is a filter for the functions used, specifically they must be greater than 30 lines. This produced my favorite result so far:
+
+![img](./me_new/output.png)
+
+There was one downside to this approach, specifically that there wasn't enough code after filtering to do more than 50x50 tiles, but that was okay, as this program was taking forever already, so doing say 80x80 like I did previously would probably take days.
+
+## Improving Speed<a id="sec-2-3"></a>
+
+I did want to try a high tile count version without the code filtering though, so I decided to make a few compromises to speed things up. Really I only made one artistic compromise, and that was the pre-calculating of themes. What I mean by that is every time the program would look at a pixel, it would create a code image for every theme, then find the closest match. I felt that since all the code used were functions, for the most part they would use all the same keywords, and so they all would be roughly the same average color if they used the same theme. If my theory was correct, this meant I could just choose one snippet of code, produce an image of it in all possible themes, then find the average color of each of those themes, save that, and when I do my actual processing, I could use that mapping to choose what theme I wanted. The downside of this approach is that if the variance between code blocks contributed to a significant variance in average color, we would end up ignoring that and our color matches would be poor. Luckily, I would argue that didn't happen:
+
+![img](./me_new/output.png)
+
+I think that this honestly looked better than when we were calculating the best match on a per theme/code combination. My reasoning is that by limiting the variance, we get a more consistent use of colors. To the computer, the text may contribute to the average color of something a decent amount, but to the eye, since it's so small, we don't really see it, at least that's what I think is happening here.
+
+As far as speed increase goes, this sped up the process from the previously stated 38 minutes, back down to 1 minute, meaning doing this was even faster than when we only had a few amount of themes. Because of this, I could easily generate some more images at a higher resolution.
+
+## New Gallery<a id="sec-2-4"></a>
+
+### Me<a id="sec-2-4-1"></a>
+
+We already saw the 50x50 tiles me, but here is a link to me made with 80x80 tiles (remember, open this image up in photoshop or something similar if you want to be able to zoom):
+
+<https://drive.google.com/file/d/1YXEz7m3AP8J4YVUfKqPOo-4X8VT1Jfta/view?usp=sharing>
+
+### Mona Lisa<a id="sec-2-4-2"></a>
+
+I **really** liked this one, I think the available colors really worked well with each other.
+
+![img](./mona_best/output.png)
+
+Here is a 80x80 tile version, possibly my favorite out of all of them:
+
+<https://drive.google.com/file/d/1Kng3F1MArv6oJt2cP_poavlT2CJrENJT/view?usp=sharing>
+
+### Gate<a id="sec-2-4-3"></a>
+
+Here is the GW gate, I think even with the additional colors, this one is still a bit too complex:
+
+![img](./gate_new/output.png)
+
+### GW Logo<a id="sec-2-4-4"></a>
+
+This one was interesting, as you can see that my method of tiling created a gradient that doesn't exist in the original image, as most likely the resizing averaged together a white and blue pixel(s).
+
+![img](./gw_new/output.png)
+
+Here is the high res version: <https://drive.google.com/file/d/1zUtoqb4A4Alnf2xW4FHo--ncReaqORpK/view?usp=sharing>

@@ -8,11 +8,16 @@ use image::{
 };
 use lab::Lab;
 use silicon::{
+    directories::PROJECT_DIRS,
     formatter::{ImageFormatter, ImageFormatterBuilder},
-    utils::init_syntect,
+    utils::{init_syntect, read_from_bat_cache},
 };
 use syntect::{
-    easy::HighlightLines, highlighting::Theme, parsing::SyntaxSet, util::LinesWithEndings,
+    dumps,
+    easy::HighlightLines,
+    highlighting::{Theme, ThemeSet},
+    parsing::SyntaxSet,
+    util::LinesWithEndings,
 };
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -24,13 +29,15 @@ enum Language {
 
 const SUB_SIZE: u32 = 400;
 const TILE_NUM: u32 = 80;
+type ThemeMapping = (Rgba<u8>,Theme);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let original_image = Reader::open("me.jpg")?.decode()?;
+    let original_image = Reader::open("mona.jpg")?.decode()?;
     let small = original_image.resize(TILE_NUM, TILE_NUM, image::imageops::FilterType::Gaussian);
     small.save("test.jpg").unwrap();
-    let (ps, ts) = init_syntect();
+    let (ps, mut ts) = init_syntect();
+    ts.add_from_folder("./assets/themes").unwrap();
     let funcs_rust = get_funcs(Language::Rust, "rust.rs");
     let funcs_c = get_funcs(Language::C, "c.c");
     let mut label_funcs_rust: Vec<(String, Language)> = funcs_rust
@@ -40,10 +47,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut label_funcs_c: Vec<(String, Language)> =
         funcs_c.into_iter().map(|s| (s, Language::C)).collect();
     label_funcs_rust.append(&mut label_funcs_c);
-    let mut funcs = label_funcs_rust;
+    //let mut funcs:Vec<(String,Language)> = label_funcs_rust.into_iter().filter(|(s,l)| s.as_bytes().iter().filter(|&&c| c == b'\n').count() >= 25).collect();
+    let mut funcs:Vec<(String,Language)> = label_funcs_rust;
     funcs.reverse();
     let mut row_handles = vec![];
     let width = small.width();
+    let mappings = produce_mapping(funcs.pop().unwrap().0, funcs.pop().unwrap().1, ts.themes.clone(), ps.clone());
     for x in 0..small.height() {
         let mut code_vec = funcs.split_off(funcs.len() - width as usize);
         let pixel_row: Vec<(u32, u32, Rgba<u8>)> = small
@@ -52,15 +61,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .to_vec();
         let mut pixel_row = pixel_row[(x * width) as usize..((x + 1) * width) as usize].to_vec();
         let themes = ts.themes.clone();
+        let map = mappings.clone();
         let ps_t = ps.clone();
         let h = tokio::spawn(async move {
             let mut best_pics = vec![];
             for _ in 0..width {
                 let color = pixel_row.pop().unwrap().2;
                 let (code, lang) = code_vec.pop().unwrap();
-                let res = calculate_single(code, lang, color, themes.clone(), ps_t.clone()).await;
+                //let res = calculate_single(code, lang, color, themes.clone(), ps_t.clone()).await;
+                let res = calculate_single_cheap(code, lang, color, map.clone(), ps_t.clone()).await;
 
-                best_pics.push(res.resize(SUB_SIZE, SUB_SIZE, Nearest));
+                best_pics.push(res.resize_to_fill(SUB_SIZE, SUB_SIZE, Nearest));
             }
             best_pics
         });
@@ -88,6 +99,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     canvas.save("output.png").unwrap();
     Ok(())
 }
+
+fn produce_mapping(
+    code: String,
+    language: Language,
+    themes: BTreeMap<String, Theme>,
+    ps: SyntaxSet,
+)->Vec<ThemeMapping>{
+    let mut formatter = new_formatter();
+    let mut v = vec![];
+    for theme in themes.iter(){
+        let img = produce_image(&code, language, &mut formatter, theme.1, &ps);
+        let p = img.resize_exact(1, 1, Nearest).get_pixel(0, 0);
+        v.push((p,theme.1.clone()));
+    }
+    v
+}
+
 fn new_formatter() -> ImageFormatter {
     ImageFormatterBuilder::new()
         .line_pad(5)
@@ -113,7 +141,7 @@ async fn calculate_single(
     let code = code.replace(|c: char| !c.is_ascii(), "");
     for theme in themes.iter() {
         let code_image = produce_image(&code, language, &mut formatter, &theme.1, &ps);
-        let new_dist = get_distance(&code_image, &color);
+        let new_dist = get_distance_from_image(&code_image, &color);
         if let Some(dist) = best_dist {
             if dist > new_dist {
                 best_dist = Some(new_dist);
@@ -127,9 +155,41 @@ async fn calculate_single(
     best.unwrap()
 }
 
-fn get_distance(img: &DynamicImage, color_b: &Rgba<u8>) -> f32 {
+async fn calculate_single_cheap(
+    code: String,
+    language: Language,
+    color: Rgba<u8>,
+    themes: Vec<ThemeMapping>,
+    ps: SyntaxSet,
+) -> DynamicImage {
+    let mut best_dist = None;
+    let mut best = None;
+    let mut formatter = new_formatter();
+    let code = code.replace(|c: char| !c.is_ascii(), "");
+    for theme in themes.iter() {
+        //let code_image = produce_image(&code, language, &mut formatter, &theme.1, &ps);
+        let new_dist = get_distance(&theme.0, &color);
+        if let Some(dist) = best_dist {
+            if dist > new_dist {
+                best_dist = Some(new_dist);
+                best = Some(theme.1.clone());
+            }
+        } else {
+            best_dist = Some(new_dist);
+            best = Some(theme.1.clone());
+        }
+    }
+    let best = best.unwrap();
+    produce_image(&code, language, &mut formatter, &best, &ps)
+}
+
+fn get_distance_from_image(img: &DynamicImage, color_b: &Rgba<u8>) -> f32 {
     let one = img.resize_exact(1, 1, Nearest);
     let color_a = GenericImageView::get_pixel(&one, 0, 0);
+    get_distance(&color_a, color_b)
+}
+
+fn get_distance(color_a:&Rgba<u8>, color_b: &Rgba<u8>) -> f32 {
     let color_a = Lab::from_rgb(&color_a.to_rgb().0);
     let color_b = Lab::from_rgb(&color_b.to_rgb().0);
     let color_a = LabValue {
